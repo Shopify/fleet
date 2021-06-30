@@ -33,7 +33,22 @@ func Manifest(namespace, image, pullPolicy, generation, checkInInterval string, 
 	)
 
 	dep := basic.Deployment(namespace, DefaultName, image, pullPolicy, DefaultName, false)
+	secretVolumeDefaultMode := int32(420)
+	dep.Spec.Template.Spec.Volumes = append(dep.Spec.Template.Spec.Volumes,
+		corev1.Volume{
+			Name: "google-service-account",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					DefaultMode: &secretVolumeDefaultMode,
+					SecretName:  "service-account-key",
+				},
+			},
+		})
 	dep.Spec.Template.Spec.Containers[0].Env = append(dep.Spec.Template.Spec.Containers[0].Env,
+		corev1.EnvVar{
+			Name:  "GOOGLE_APPLICATION_CREDENTIALS",
+			Value: "/var/run/gcloud/key",
+		},
 		corev1.EnvVar{
 			Name:  "CHECKIN_INTERVAL",
 			Value: checkInInterval,
@@ -45,6 +60,12 @@ func Manifest(namespace, image, pullPolicy, generation, checkInInterval string, 
 	if agentEnvVars != nil {
 		dep.Spec.Template.Spec.Containers[0].Env = append(dep.Spec.Template.Spec.Containers[0].Env, agentEnvVars...)
 	}
+	dep.Spec.Template.Spec.Containers[0].VolumeMounts = append(dep.Spec.Template.Spec.Containers[0].VolumeMounts,
+		corev1.VolumeMount{
+			Name:      "google-service-account",
+			MountPath: "/var/run/gcloud",
+			ReadOnly:  true,
+		})
 	dep.Spec.Template.Spec.Affinity = &corev1.Affinity{
 		NodeAffinity: &corev1.NodeAffinity{
 			PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{
