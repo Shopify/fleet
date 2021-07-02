@@ -91,6 +91,7 @@ func (h *handler) DeployBundle(bd *fleet.BundleDeployment, status fleet.BundleDe
 func (h *handler) Trigger(key string, bd *fleet.BundleDeployment) (*fleet.BundleDeployment, error) {
 	logrus.Infof("Triggered by key: %s", key)
 	if bd == nil {
+		logrus.Infof("Bundle is nil for key %s, calling clear", key)
 		return bd, h.trigger.Clear(key)
 	}
 

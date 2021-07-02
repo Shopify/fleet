@@ -80,7 +80,9 @@ func (h *handler) resolveApp(_ string, _ string, obj runtime.Object) ([]relatedr
 }
 
 func (h *handler) OnClusterChange(_ string, cluster *fleet.Cluster) (*fleet.Cluster, error) {
+	logrus.Info("OnClusterChange in bundle controller")
 	if cluster == nil {
+		logrus.Warn("No cluster in OnClusterChange in bundle controller")
 		return nil, nil
 	}
 

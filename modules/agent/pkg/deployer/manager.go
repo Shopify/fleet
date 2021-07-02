@@ -53,8 +53,10 @@ func (m *Manager) releaseName(bd *fleet.BundleDeployment) string {
 }
 
 func (m *Manager) Cleanup() error {
+	logrus.Info("Calling Cleanup() in deployer manager")
 	deployed, err := m.deployer.ListDeployments()
 	if err != nil {
+		logrus.Error(err)
 		return err
 	}
 
@@ -63,15 +65,18 @@ func (m *Manager) Cleanup() error {
 		if apierror.IsNotFound(err) {
 			logrus.Infof("Deleting orphan bundle ID %s, release %s", deployed.BundleID, deployed.ReleaseName)
 			if err := m.deployer.Delete(deployed.BundleID, deployed.ReleaseName); err != nil {
+				logrus.Error(err)
 				return err
 			}
 		} else if err != nil {
+			logrus.Error(err)
 			return err
 		} else {
 			releaseName := m.releaseName(bundleDeployment)
 			if releaseName != deployed.ReleaseName {
 				logrus.Infof("Deleting unknown bundle ID %s, release %s, expecting release %s", deployed.BundleID, deployed.ReleaseName, releaseName)
 				if err := m.deployer.Delete(deployed.BundleID, deployed.ReleaseName); err != nil {
+					logrus.Error(err)
 					return err
 				}
 			}
@@ -89,11 +94,13 @@ func (m *Manager) Delete(bundleDeploymentKey string) error {
 func (m *Manager) Resources(bd *fleet.BundleDeployment) (*Resources, error) {
 	resources, err := m.deployer.Resources(bd.Name, bd.Status.Release)
 	if err != nil {
+		logrus.Infof("No error from calling deploy with resources from manager for bundle %s", bd.Name)
 		return nil, nil
 	}
 
 	plan, err := m.plan(bd, resources.DefaultNamespace, resources.Objects...)
 	if err != nil {
+		logrus.Errorf("Error calling plan in manager, %s", err)
 		return nil, err
 	}
 
@@ -107,14 +114,17 @@ func (m *Manager) Resources(bd *fleet.BundleDeployment) (*Resources, error) {
 		}
 	}
 
+	logrus.Infof("Resources for bundle %s, %+v", bd.Name, resources)
 	return resources, nil
 }
 
 func (m *Manager) Deploy(bd *fleet.BundleDeployment) (string, error) {
 	if bd.Spec.DeploymentID == bd.Status.AppliedDeploymentID {
 		if ok, err := m.deployer.EnsureInstalled(bd.Name, bd.Status.Release); err != nil {
+			logrus.Errorf("Error calling EnsureInstalled from Deploy manager: %s", err)
 			return "", err
 		} else if ok {
+			logrus.Infof("EnsureInstalled in Deploy manager is ok, release status: %+v", bd.Status.Release)
 			return bd.Status.Release, nil
 		}
 	}
@@ -122,14 +132,17 @@ func (m *Manager) Deploy(bd *fleet.BundleDeployment) (string, error) {
 	manifestID, _ := kv.Split(bd.Spec.DeploymentID, ":")
 	manifest, err := m.lookup.Get(manifestID)
 	if err != nil {
+		logrus.Errorf("Error looking up manifest: %s - %s", manifestID, err)
 		return "", err
 	}
 
 	manifest.Commit = bd.Labels["fleet.cattle.io/commit"]
 	resource, err := m.deployer.Deploy(bd.Name, manifest, bd.Spec.Options)
 	if err != nil {
+		logrus.Errorf("Error from manager deploying %s", err)
 		return "", err
 	}
 
+	logrus.Infof("Successfully deployed resource: %s", resource.ID)
 	return resource.ID, nil
 }
