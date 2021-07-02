@@ -305,6 +305,7 @@ func (h *handler) OnChange(gitrepo *fleet.GitRepo, status fleet.GitRepoStatus) (
 
 	branch, rev := gitrepo.Spec.Branch, gitrepo.Spec.Revision
 	if branch == "" && rev == "" {
+		logrus.Infof("Branch for gitrepo %s wasn't set, setting to master", gitrepo.Name)
 		branch = "master"
 	}
 
@@ -312,6 +313,7 @@ func (h *handler) OnChange(gitrepo *fleet.GitRepo, status fleet.GitRepoStatus) (
 	if err != nil {
 		return nil, status, err
 	}
+	logrus.Infof("Got configmap for repo %s, %+v", gitrepo.Name, configMap)
 
 	syncSeconds := 0
 	if gitrepo.Spec.PollingInterval != nil {
@@ -319,6 +321,7 @@ func (h *handler) OnChange(gitrepo *fleet.GitRepo, status fleet.GitRepoStatus) (
 	}
 
 	saName := name.SafeConcatName("git", gitrepo.Name)
+	logrus.Infof("Service account name for gitrepo %s is %s", gitrepo.Name, saName)
 
 	bundleErrorState := ""
 	if status.Summary.WaitApplied > 0 {
@@ -332,7 +335,7 @@ func (h *handler) OnChange(gitrepo *fleet.GitRepo, status fleet.GitRepoStatus) (
 	volumes, volumeMounts := volumes(gitrepo, configMap)
 	args, envs := argsAndEnvs(gitrepo)
 	logrus.Infof("Args for gitrepo: %+v\n, envs for gitrepo: %+v", args, envs)
-	return []runtime.Object{
+	obj := []runtime.Object{
 		configMap,
 		&corev1.ServiceAccount{
 			ObjectMeta: metav1.ObjectMeta{
@@ -433,7 +436,9 @@ func (h *handler) OnChange(gitrepo *fleet.GitRepo, status fleet.GitRepoStatus) (
 				},
 			},
 		},
-	}, status, nil
+	}
+	logrus.Infof("Git controller constructed object: %+v", obj)
+	return obj, status, nil
 }
 
 func countResources(status fleet.GitRepoStatus) fleet.GitRepoStatus {
