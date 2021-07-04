@@ -14,6 +14,7 @@ import (
 	"github.com/rancher/wrangler/pkg/apply"
 	"github.com/rancher/wrangler/pkg/generic"
 	"github.com/rancher/wrangler/pkg/relatedresource"
+	"github.com/sirupsen/logrus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -83,16 +84,20 @@ func (h *handler) resolveApp(_ string, _ string, obj runtime.Object) ([]relatedr
 }
 
 func (h *handler) OnClusterChange(_ string, cluster *fleet.Cluster) (*fleet.Cluster, error) {
+	logrus.Info("OnClusterChange in bundle controller")
 	if cluster == nil {
+		logrus.Warn("No cluster in OnClusterChange in bundle controller")
 		return nil, nil
 	}
 
 	bundles, err := h.targets.BundlesForCluster(cluster)
 	if err != nil {
+		logrus.Errorf("Bundle controller failed to get target bundles for cluster %+v, err: %s", cluster, err)
 		return nil, err
 	}
 
 	for _, bundle := range bundles {
+		logrus.Infof("Enqueuing bundle: %s, namespace: %s", bundle.Name, bundle.Namespace)
 		h.bundles.Enqueue(bundle.Namespace, bundle.Name)
 	}
 
@@ -100,12 +105,14 @@ func (h *handler) OnClusterChange(_ string, cluster *fleet.Cluster) (*fleet.Clus
 }
 
 func (h *handler) OnPurgeOrphaned(key string, bundle *fleet.Bundle) (*fleet.Bundle, error) {
+	logrus.Infof("Bundle controller purging orphan %s", key)
 	if bundle == nil {
 		return bundle, nil
 	}
 
 	repo := bundle.Labels[fleet.RepoLabel]
 	if repo == "" {
+		logrus.Warnf("Bundle label didn't find any repo label, %s", fleet.RepoLabel)
 		return nil, nil
 	}
 
@@ -113,6 +120,7 @@ func (h *handler) OnPurgeOrphaned(key string, bundle *fleet.Bundle) (*fleet.Bund
 	if apierrors.IsNotFound(err) {
 		return nil, h.bundles.Delete(bundle.Namespace, bundle.Name, nil)
 	} else if err != nil {
+		logrus.Errorf("Error getting bundle %s from repo %s", bundle.Name, repo)
 		return nil, err
 	}
 
@@ -137,16 +145,20 @@ func (h *handler) OnPurgeOrphanedImageScan(key string, image *fleet.ImageScan) (
 }
 
 func (h *handler) OnBundleChange(bundle *fleet.Bundle, status fleet.BundleStatus) ([]runtime.Object, fleet.BundleStatus, error) {
+	logrus.Infof("Handling on bundle change for bundle: %+v", bundle)
 	targets, err := h.targets.Targets(bundle)
 	if err != nil {
+		logrus.Error("Error getting targets for bundle")
 		return nil, status, err
 	}
 
 	if err := h.calculateChanges(&status, targets); err != nil {
+		logrus.Errorf("Got error calculating changes: %s", err)
 		return nil, status, err
 	}
 
 	if err := setResourceKey(&status, bundle, h.isNamespaced, status.ObservedGeneration != bundle.Generation); err != nil {
+		logrus.Errorf("Got error setting resource key: %s", err)
 		return nil, status, err
 	}
 

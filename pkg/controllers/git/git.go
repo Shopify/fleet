@@ -24,6 +24,7 @@ import (
 	"github.com/rancher/wrangler/pkg/name"
 	"github.com/rancher/wrangler/pkg/relatedresource"
 	"github.com/rancher/wrangler/pkg/yaml"
+	"github.com/sirupsen/logrus"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -120,6 +121,7 @@ func (h *handler) getConfig(repo *fleet.GitRepo) (*corev1.ConfigMap, error) {
 	}
 	data, err := json.Marshal(spec)
 	if err != nil {
+		logrus.Errorf("Failed to marshal git repo target config: %+v", repo.Spec.Targets)
 		return nil, err
 	}
 
@@ -274,6 +276,7 @@ func mergeConditions(existing, next []genericcondition.GenericCondition) []gener
 }
 
 func (h *handler) OnChange(gitrepo *fleet.GitRepo, status fleet.GitRepoStatus) ([]runtime.Object, fleet.GitRepoStatus, error) {
+	logrus.Infof("Handling GitRepo on change event for repo: %s, status: %+v", gitrepo.Spec.Repo, status)
 	status.ObservedGeneration = gitrepo.Generation
 
 	if gitrepo.Spec.Repo == "" {
@@ -282,12 +285,15 @@ func (h *handler) OnChange(gitrepo *fleet.GitRepo, status fleet.GitRepoStatus) (
 
 	if gitrepo.Spec.HelmSecretName != "" {
 		if _, err := h.secrets.Get(gitrepo.Namespace, gitrepo.Spec.HelmSecretName); err != nil {
-			return nil, status, fmt.Errorf("failed to look up helmSecretName, error: %v", err)
+			err = fmt.Errorf("failed to look up helmSecretName, error: %v", err)
+			logrus.Error(err)
+			return nil, status, err
 		}
 	}
 
 	gitrepo, err := h.authorizeAndAssignDefaults(gitrepo)
 	if err != nil {
+		logrus.Errorf("Error authorizing and assigning defaults to gitrepo: %s", err)
 		return nil, status, err
 	}
 
@@ -303,6 +309,7 @@ func (h *handler) OnChange(gitrepo *fleet.GitRepo, status fleet.GitRepoStatus) (
 
 	gitJob, err := h.gitjobCache.Get(gitrepo.Namespace, gitrepo.Name)
 	if err == nil {
+		logrus.Infof("Gitrepo job cache miss for: %s", gitrepo.Name)
 		status.Commit = gitJob.Status.Commit
 		status.Conditions = mergeConditions(status.Conditions, gitJob.Status.Conditions)
 		status.GitJobStatus = gitJob.Status.JobStatus
@@ -316,6 +323,7 @@ func (h *handler) OnChange(gitrepo *fleet.GitRepo, status fleet.GitRepoStatus) (
 
 	branch, rev := gitrepo.Spec.Branch, gitrepo.Spec.Revision
 	if branch == "" && rev == "" {
+		logrus.Infof("Branch for gitrepo %s wasn't set, setting to master", gitrepo.Name)
 		branch = "master"
 	}
 
@@ -323,6 +331,7 @@ func (h *handler) OnChange(gitrepo *fleet.GitRepo, status fleet.GitRepoStatus) (
 	if err != nil {
 		return nil, status, err
 	}
+	logrus.Infof("Got configmap for repo %s, %+v", gitrepo.Name, configMap)
 
 	syncSeconds := 0
 	if gitrepo.Spec.PollingInterval != nil {
@@ -330,6 +339,7 @@ func (h *handler) OnChange(gitrepo *fleet.GitRepo, status fleet.GitRepoStatus) (
 	}
 
 	saName := name.SafeConcatName("git", gitrepo.Name)
+	logrus.Infof("Service account name for gitrepo %s is %s", gitrepo.Name, saName)
 
 	bundleErrorState := ""
 	if status.Summary.WaitApplied > 0 {
@@ -342,7 +352,8 @@ func (h *handler) OnChange(gitrepo *fleet.GitRepo, status fleet.GitRepoStatus) (
 	status = countResources(status)
 	volumes, volumeMounts := volumes(gitrepo, configMap)
 	args, envs := argsAndEnvs(gitrepo)
-	return []runtime.Object{
+	logrus.Infof("Args for gitrepo: %+v\n, envs for gitrepo: %+v", args, envs)
+	obj := []runtime.Object{
 		configMap,
 		&corev1.ServiceAccount{
 			ObjectMeta: metav1.ObjectMeta{
@@ -443,7 +454,9 @@ func (h *handler) OnChange(gitrepo *fleet.GitRepo, status fleet.GitRepoStatus) (
 				},
 			},
 		},
-	}, status, nil
+	}
+	logrus.Infof("Git controller constructed object: %+v", obj)
+	return obj, status, nil
 }
 
 func countResources(status fleet.GitRepoStatus) fleet.GitRepoStatus {
@@ -482,6 +495,7 @@ func (h *handler) setBundleStatus(gitrepo *fleet.GitRepo, status fleet.GitRepoSt
 		"fleet.cattle.io/bundle-namespace": gitrepo.Namespace,
 	}))
 	if err != nil {
+		logrus.Errorf("Error setting bundle status %s", err)
 		return status, err
 	}
 

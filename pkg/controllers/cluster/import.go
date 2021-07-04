@@ -77,11 +77,14 @@ func agentDeployed(cluster *fleet.Cluster) bool {
 }
 
 func (i *importHandler) OnChange(key string, cluster *fleet.Cluster) (_ *fleet.Cluster, err error) {
+	logrus.Info("Calling OnChange in cluster importHandler")
 	if cluster == nil {
+		logrus.Warn("Called OnChange without a cluster?")
 		return cluster, nil
 	}
 
 	if cluster.Spec.KubeConfigSecret == "" || agentDeployed(cluster) {
+		logrus.Infof("Skipping cluster because kubeconfig secret is either empty, or agent is already deployed on the cluster, %+v", cluster)
 		return cluster, nil
 	}
 
@@ -89,11 +92,14 @@ func (i *importHandler) OnChange(key string, cluster *fleet.Cluster) (_ *fleet.C
 		cluster = cluster.DeepCopy()
 		cluster.Spec.ClientID, err = randomtoken.Generate()
 		if err != nil {
+			logrus.Errorf("Error generating a client id for cluster: %s, %+v", err, cluster)
 			return nil, err
 		}
+		logrus.Infof("Cluster has no client ID, so added ID: %s", cluster.Spec.ClientID)
 		return i.clusters.Update(cluster)
 	}
 
+	logrus.Info("Fell through all of the conditions for changing a cluster, so... reached end of OnChange func")
 	return cluster, nil
 }
 

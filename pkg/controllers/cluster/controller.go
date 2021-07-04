@@ -13,6 +13,7 @@ import (
 	"github.com/rancher/wrangler/pkg/kv"
 	"github.com/rancher/wrangler/pkg/name"
 	"github.com/rancher/wrangler/pkg/relatedresource"
+	"github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -102,6 +103,7 @@ func clusterToNamespace(clusterNamespace, clusterName string) string {
 }
 
 func (h *handler) OnClusterChanged(cluster *fleet.Cluster, status fleet.ClusterStatus) (fleet.ClusterStatus, error) {
+	logrus.Infof("Calling OnClusterChanged for cluster: %+v", cluster)
 	if cluster.DeletionTimestamp != nil {
 		return status, nil
 	}
@@ -112,6 +114,7 @@ func (h *handler) OnClusterChanged(cluster *fleet.Cluster, status fleet.ClusterS
 
 	bundleDeployments, err := h.bundleDeployment.List(status.Namespace, labels.Everything())
 	if err != nil {
+		logrus.Infof("Error listing bundle deployments in namespace: %s - err: %s", status.Namespace, err)
 		return status, err
 	}
 
@@ -138,6 +141,7 @@ func (h *handler) OnClusterChanged(cluster *fleet.Cluster, status fleet.ClusterS
 	}
 
 	allReady := true
+	logrus.Infof("Looping over repos in Cluster Controller: %+v", repos)
 	for repo, ready := range repos {
 		gitrepo, err := h.gitRepos.Get(repo.ns, repo.repo)
 		if err == nil {
@@ -148,6 +152,8 @@ func (h *handler) OnClusterChanged(cluster *fleet.Cluster, status fleet.ClusterS
 			} else {
 				allReady = false
 			}
+		} else {
+			logrus.Errorf("Error getting repo %s, err: %s", repo.repo, err)
 		}
 	}
 
@@ -155,6 +161,7 @@ func (h *handler) OnClusterChanged(cluster *fleet.Cluster, status fleet.ClusterS
 		// Counts from gitrepo are out of sync with bundleDeployment state
 		// just retry in 15 seconds as there no great way to trigger an event that
 		// doesn't cause a loop
+		logrus.Infof("Counts from repo are out of sync, so re-enqueueing for cluster: %+v", cluster)
 		h.clusters.EnqueueAfter(cluster.Namespace, cluster.Name, 15*time.Second)
 	}
 

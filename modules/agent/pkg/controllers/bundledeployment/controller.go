@@ -91,10 +91,12 @@ func (h *handler) DeployBundle(bd *fleet.BundleDeployment, status fleet.BundleDe
 
 	release, err := h.deployManager.Deploy(bd)
 	if err != nil {
+		logrus.Errorf("Error deploying bundle, status: %+v - bundle: %+v", status, bd)
 		return status, err
 	}
 	status.Release = release
 	status.AppliedDeploymentID = bd.Spec.DeploymentID
+	logrus.Infof("Bundle deployed successfully: %+v", bd)
 	return status, nil
 }
 
@@ -128,12 +130,15 @@ func (h *handler) checkDependency(bd *fleet.BundleDeployment) (string, bool, err
 }
 
 func (h *handler) Trigger(key string, bd *fleet.BundleDeployment) (*fleet.BundleDeployment, error) {
+	logrus.Infof("Triggered by key: %s", key)
 	if bd == nil {
+		logrus.Infof("Bundle is nil for key %s, calling clear", key)
 		return bd, h.trigger.Clear(key)
 	}
 
 	resources, err := h.deployManager.Resources(bd)
 	if err != nil {
+		logrus.Errorf("Couldn't get resources from deploy manager: %s, bundle: %+v", err, bd)
 		return bd, err
 	}
 
@@ -143,6 +148,7 @@ func (h *handler) Trigger(key string, bd *fleet.BundleDeployment) (*fleet.Bundle
 		}, resources.Objects...)
 	}
 
+	logrus.Info("Hit end of Trigger function in bundledeploy")
 	return bd, nil
 }
 
@@ -160,12 +166,14 @@ func shouldRedeploy(bd *fleet.BundleDeployment) bool {
 }
 
 func (h *handler) MonitorBundle(bd *fleet.BundleDeployment, status fleet.BundleDeploymentStatus) (fleet.BundleDeploymentStatus, error) {
+	logrus.Infof("Called MonitorBundle, bundle: %+v", bd)
 	if bd.Spec.DeploymentID != status.AppliedDeploymentID {
 		return status, nil
 	}
 
 	deploymentStatus, err := h.deployManager.MonitorBundle(bd)
 	if err != nil {
+		logrus.Errorf("Error having deploy manager monitor bundle: %+v, status: %+v", bd, status)
 		return status, err
 	}
 
